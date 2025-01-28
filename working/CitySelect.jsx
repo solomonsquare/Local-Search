@@ -14,18 +14,25 @@ const CitySelect = ({ setCoordinates }) => {
         (el) => el.place_id === selectedCity
       );
 
-      // Ensure we have valid polygon coordinates
-      if (
-        selectedCityData?.geojson?.type === 'Polygon' &&
-        Array.isArray(selectedCityData?.geojson?.coordinates) &&
-        selectedCityData.geojson.coordinates.length > 0
-      ) {
-        setCoordinates(selectedCityData.geojson.coordinates);
-      } else {
-        console.warn(
-          'Invalid or missing polygon coordinates for selected city'
-        );
-        setCoordinates([]);
+      if (selectedCityData) {
+        // Handle polygon data if available
+        if (
+          selectedCityData?.geojson?.type === 'Polygon' &&
+          Array.isArray(selectedCityData?.geojson?.coordinates) &&
+          selectedCityData.geojson.coordinates.length > 0
+        ) {
+          setCoordinates(selectedCityData.geojson.coordinates);
+        }
+        // Handle point data (node type locations)
+        else if (selectedCityData.lat && selectedCityData.lon) {
+          setCoordinates([[parseFloat(selectedCityData.lon), parseFloat(selectedCityData.lat)]]);
+        }
+        else {
+          console.warn(
+            'Invalid or missing location data for selected city'
+          );
+          setCoordinates([]);
+        }
       }
     } else {
       setCoordinates([]);
@@ -44,16 +51,17 @@ const CitySelect = ({ setCoordinates }) => {
         );
         const body = await response.json();
         if (Array.isArray(body)) {
-          // Only keep cities with valid polygon data
-          const validCities = body.filter(
+          // Accept both polygon and point-based locations
+          const validLocations = body.filter(
             (result) =>
-              result.geojson?.type === 'Polygon' &&
-              Array.isArray(result.geojson?.coordinates) &&
-              result.geojson.coordinates.length > 0
+              (result.geojson?.type === 'Polygon' &&
+               Array.isArray(result.geojson?.coordinates) &&
+               result.geojson.coordinates.length > 0) ||
+              (result.lat && result.lon) // Accept point-based locations
           );
 
-          setListCity(validCities);
-          const options = validCities.map((result) => ({
+          setListCity(validLocations);
+          const options = validLocations.map((result) => ({
             label: result.display_name,
             value: result.place_id,
           }));

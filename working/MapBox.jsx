@@ -12,6 +12,29 @@ const initialViewState = {
   pitch: 0,
 };
 
+// Helper function to create a polygon from a point
+const createPolygonFromPoint = (longitude, latitude, radiusInKm = 1) => {
+  const points = 32; // Number of points to create the circle
+  const coords = [];
+  const kmInLongitudeDegree = 111.320 * Math.cos(latitude * Math.PI / 180);
+  
+  // Convert km to degrees for lat/lon
+  const radiusLat = radiusInKm / 111.0;
+  const radiusLon = radiusInKm / kmInLongitudeDegree;
+
+  for (let i = 0; i < points; i++) {
+    const angle = (i * 360 / points) * Math.PI / 180;
+    const x = longitude + radiusLon * Math.cos(angle);
+    const y = latitude + radiusLat * Math.sin(angle);
+    coords.push([x, y]);
+  }
+  
+  // Close the polygon by repeating the first point
+  coords.push(coords[0]);
+  
+  return [coords]; // Return as polygon coordinates array
+};
+
 function MapBox({ coordinates }) {
   const [viewState, setViewState] = useState(initialViewState);
   const [mapLoaded, setMapLoaded] = useState(false);
@@ -38,6 +61,19 @@ function MapBox({ coordinates }) {
 
   const validCoordinates =
     coordinates?.length > 0 && Array.isArray(coordinates[0]);
+
+  // Handle point coordinates by converting them to a polygon
+  const getPolygonCoordinates = () => {
+    if (!validCoordinates) return null;
+    
+    // If coordinates is a single point (not a polygon)
+    if (!Array.isArray(coordinates[0][0])) {
+      const [longitude, latitude] = coordinates[0];
+      return createPolygonFromPoint(longitude, latitude);
+    }
+    
+    return coordinates;
+  };
 
   const token = process.env.REACT_APP_MAPBOX_KEY;
   if (!token || !token.startsWith('pk.')) {
@@ -78,7 +114,7 @@ function MapBox({ coordinates }) {
               type: 'Feature',
               geometry: {
                 type: 'Polygon',
-                coordinates: coordinates,
+                coordinates: getPolygonCoordinates(),
               },
               properties: {},
             }}
