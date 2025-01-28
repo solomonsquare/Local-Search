@@ -4,8 +4,9 @@
     <title>Location Search</title>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.7.1/dist/leaflet.css" />
+    <link href="https://api.mapbox.com/mapbox-gl-js/v2.15.0/mapbox-gl.css" rel="stylesheet">
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+    <script src="https://api.mapbox.com/mapbox-gl-js/v2.15.0/mapbox-gl.js"></script>
     <style>
         :root {
             --primary-color: #2563eb;
@@ -236,19 +237,28 @@
         }
 
         /* Map customization */
-        .leaflet-control-zoom {
-            border: none !important;
-            box-shadow: var(--shadow-md) !important;
-        }
-
-        .leaflet-control-zoom a {
+        .mapboxgl-ctrl-zoom-in,
+        .mapboxgl-ctrl-zoom-out {
             background: var(--background-color) !important;
             color: var(--text-primary) !important;
             border: 1px solid var(--border-color) !important;
+            border-radius: var(--radius-md) !important;
+            margin-bottom: 5px !important;
         }
 
-        .leaflet-control-zoom a:hover {
+        .mapboxgl-ctrl-zoom-in:hover,
+        .mapboxgl-ctrl-zoom-out:hover {
             background: var(--surface-color) !important;
+        }
+
+        .mapboxgl-popup {
+            max-width: 300px;
+        }
+
+        .mapboxgl-popup-content {
+            padding: 15px;
+            border-radius: var(--radius-md);
+            box-shadow: var(--shadow-md);
         }
 
         /* Quick search icons */
@@ -332,7 +342,6 @@
             }
         }
     </style>
-    <script src="https://unpkg.com/leaflet@1.7.1/dist/leaflet.js"></script>
 </head>
 <body>
     <div id="container">
@@ -401,30 +410,66 @@
     </div>
 
     <script>
+        // Initialize Mapbox with the access token from Flask
+        mapboxgl.accessToken = '{{ mapbox_token }}';
+        
         let map;
         let markers = [];
         let currentBoundary;
         let searchTimeout;
 
         function initMap() {
-            map = L.map('map', {
-                maxBounds: [[-90, -180], [90, 180]],
-                maxBoundsViscosity: 1.0,
-                wheelDebounceTime: 100,
-                zoomControl: true
-            }).setView([54.9783, -1.6178], 13);  // Default center on Newcastle
-            
-            L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-                maxZoom: 19,
-                minZoom: 11,
-                attribution: '&copy; OpenStreetMap contributors'
-            }).addTo(map);
-
-            map.on('error', function(e) {
-                console.error('Map error:', e);
+            // Initialize the map
+            map = new mapboxgl.Map({
+                container: 'map',
+                style: 'mapbox://styles/mapbox/streets-v12',
+                center: [-1.6178, 54.9783], // Default center on Newcastle
+                zoom: 13
             });
 
-            setupSearchAutocomplete();
+            // Add zoom controls
+            map.addControl(new mapboxgl.NavigationControl());
+
+            // Wait for both the map and style to load
+            map.on('load', () => {
+                setupSearchAutocomplete();
+                console.log('Map loaded');
+            });
+        }
+
+        function clearMarkers() {
+            markers.forEach(marker => marker.remove());
+            markers = [];
+        }
+
+        function addMarker(place) {
+            const marker = new mapboxgl.Marker()
+                .setLngLat([place.longitude, place.latitude])
+                .setPopup(new mapboxgl.Popup().setHTML(`
+                    <div class="place-name">${place.name}</div>
+                    <div class="place-type">${place.type}</div>
+                    <div class="place-details">${place.formatted_address}</div>
+                `))
+                .addTo(map);
+            markers.push(marker);
+        }
+
+        function updateMap(places) {
+            clearMarkers();
+            
+            if (places.length > 0) {
+                const bounds = new mapboxgl.LngLatBounds();
+                
+                places.forEach(place => {
+                    addMarker(place);
+                    bounds.extend([place.longitude, place.latitude]);
+                });
+
+                map.fitBounds(bounds, {
+                    padding: 50,
+                    maxZoom: 15
+                });
+            }
         }
 
         function setupSearchAutocomplete() {
@@ -651,17 +696,88 @@
 
                 div.addEventListener('click', () => {
                     const position = place.type === 'node' ? 
-                        [place.lat, place.lon] : 
-                        [place.center.lat, place.center.lon];
-                    map.setView(position, 18);
-                    markers.find(m => m.getLatLng().equals(position))?.openPopup();
+                        [place.lon, place.lat] : // Mapbox uses [longitude, latitude]
+                        [place.center.lon, place.center.lat];
+                    
+                    map.flyTo({
+                        center: position,
+                        zoom: 18
+                    });
+
+                    const marker = markers.find(m => {
+                        const markerPos = m.getLngLat();
+                        return markerPos.lng === position[0] && markerPos.lat === position[1];
+                    });
+                    if (marker) {
+                        marker.togglePopup();
+                    }
                 });
 
                 container.appendChild(div);
             });
         }
 
-        async function searchLocation(selectedPlace = null) {
+        function getBoundingBoxAndCenter(location) {
+            if (!location) return [null, null];
+
+            let boundingBox;
+            const center = {
+                lat: parseFloat(location.lat),
+                lon: parseFloat(location.lon)
+            };
+
+            // Use more precise boundaries for cities and towns
+            if (location.type === 'city' || location.type === 'town' || 
+                location.type === 'administrative' || location.osm_type === 'relation' ||
+                location.class === 'boundary' || location.class === 'place') {
+                
+                const bbox = location.boundingbox.map(parseFloat);
+                boundingBox = [[bbox[2], bbox[0]], [bbox[3], bbox[1]]]; // Convert to [lng, lat] format for Mapbox
+            } else {
+                // For other locations, use a reasonable radius
+                const radius = 0.05; // roughly 5km
+                boundingBox = [
+                    [center.lon - radius, center.lat - radius],
+                    [center.lon + radius, center.lat + radius]
+                ];
+            }
+
+            return [boundingBox, center];
+        }
+
+        function addMarkers(places) {
+            clearMarkers();
+            
+            places.forEach(place => {
+                if ((place.type === 'node' || (place.type === 'way' && place.center)) && place.tags) {
+                    const position = place.type === 'node' ? 
+                        [place.lon, place.lat] : // Mapbox uses [longitude, latitude]
+                        [place.center.lon, place.center.lat];
+
+                    let type = 'Place';
+                    if (place.tags.amenity) type = place.tags.amenity.replace(/_/g, ' ');
+                    if (place.tags.tourism) type = place.tags.tourism.replace(/_/g, ' ');
+                    if (place.tags.shop) type = place.tags.shop.replace(/_/g, ' ');
+                    type = type.charAt(0).toUpperCase() + type.slice(1);
+
+                    const marker = new mapboxgl.Marker()
+                        .setLngLat(position)
+                        .setPopup(new mapboxgl.Popup().setHTML(`
+                            <strong>${place.tags.name || `Unnamed ${type}`}</strong><br>
+                            <em>${type}</em><br>
+                            ${place.tags.cuisine ? `Cuisine: ${place.tags.cuisine}<br>` : ''}
+                            ${place.tags.opening_hours ? `Hours: ${place.tags.opening_hours}<br>` : ''}
+                            ${place.tags.phone ? `Phone: ${place.tags.phone}<br>` : ''}
+                            ${place.tags.website ? `<a href="${place.tags.website}" target="_blank">Website</a><br>` : ''}
+                            ${place.tags.addr_street ? `Address: ${place.tags.addr_street}${place.tags.addr_housenumber ? ' ' + place.tags.addr_housenumber : ''}<br>` : ''}
+                        `))
+                        .addTo(map);
+                    markers.push(marker);
+                }
+            });
+        }
+
+        function searchLocation(selectedPlace = null) {
             try {
                 let searchQuery = document.getElementById('search-input').value;
                 
@@ -687,142 +803,183 @@
                     locationTerm = searchQuery.trim();
                 }
 
-                const location = selectedPlace || await getLocation(locationTerm);
-                if (!location) {
-                    showError('Location not found. Please try a different location.');
-                    return;
-                }
+                getLocation(locationTerm).then(location => {
+                    if (!location) {
+                        showError('Location not found. Please try a different location.');
+                        return;
+                    }
 
-                const [boundingBox, center] = getBoundingBoxAndCenter(location);
-                
-                // Draw boundary
-                if (boundingBox) {
-                    // If GeoJSON boundary is available, use it for more precise boundary
-                    if (location.geojson && location.geojson.type === 'Polygon') {
-                        const coordinates = location.geojson.coordinates[0].map(coord => [coord[1], coord[0]]);
-                        currentBoundary = L.polygon(coordinates, {
-                            color: '#FF4444',
-                            weight: 2,
-                            fillOpacity: 0.1
-                        }).addTo(map);
+                    const [boundingBox, center] = getBoundingBoxAndCenter(location);
+                    currentBoundary = boundingBox;
+
+                    // Create a proper GeoJSON feature
+                    const geojsonData = {
+                        type: 'Feature',
+                        properties: {},
+                        geometry: location.geojson || {
+                            type: 'Polygon',
+                            coordinates: [[
+                                [boundingBox[0][0], boundingBox[0][1]],
+                                [boundingBox[1][0], boundingBox[0][1]],
+                                [boundingBox[1][0], boundingBox[1][1]],
+                                [boundingBox[0][0], boundingBox[1][1]],
+                                [boundingBox[0][0], boundingBox[0][1]]
+                            ]]
+                        }
+                    };
+
+                    // Add the boundary to the map
+                    if (!map.isStyleLoaded()) {
+                        map.once('style.load', () => {
+                            addBoundaryToMap(geojsonData, location);
+                        });
                     } else {
-                        // Fallback to rectangle boundary
-                        currentBoundary = L.rectangle(boundingBox, {
-                            color: '#FF4444',
-                            weight: 2,
-                            fillOpacity: 0.1
-                        }).addTo(map);
+                        addBoundaryToMap(geojsonData, location);
                     }
 
                     // Hide error message if it was showing
                     const errorDiv = document.getElementById('error-message');
                     errorDiv.style.display = 'none';
-                }
 
-                // Only search for places if a specific type was requested
-                if (searchTerm) {
-                    const places = await searchPlaces(searchTerm, center, boundingBox);
-                    if (places.length === 0) {
-                        showError('No places found in this area. Try a different search.');
-                        return;
+                    // Only search for places if a specific type was requested
+                    if (searchTerm) {
+                        searchPlaces(searchTerm, center, boundingBox, location.areaId).then(places => {
+                            if (places.length === 0) {
+                                showError('No places found in this area. Try a different search.');
+                                return;
+                            }
+                            addMarkers(places);
+                            updateResultsList(places);
+                        }).catch(error => {
+                            console.error('Places search error:', error);
+                            showError('Failed to search for places. Please try again.');
+                        });
                     }
-                    addMarkers(places);
-                    updateResultsList(places);
-                }
-
+                }).catch(error => {
+                    console.error('Location search error:', error);
+                    showError('Failed to find location. Please try again.');
+                });
             } catch (error) {
                 console.error('Search error:', error);
                 showError('Failed to perform search. Please try again.');
             }
         }
 
-        function clearAllResults() {
-            // Clear results list and hide export button
-            const resultsContainer = document.getElementById('results-container');
-            const exportContainer = document.getElementById('export-container');
-            resultsContainer.innerHTML = '';
-            exportContainer.style.display = 'none';
-
-            // Clear existing markers
-            if (markers) {
-                markers.forEach(marker => marker && map.removeLayer(marker));
-                markers = [];
-            }
-
-            // Clear boundary
-            if (currentBoundary) {
-                map.removeLayer(currentBoundary);
-                currentBoundary = null;
-            }
-
-            // Clear error message
-            const errorDiv = document.getElementById('error-message');
-            errorDiv.style.display = 'none';
-            errorDiv.textContent = '';
-        }
-
         async function getLocation(locationTerm) {
-            // Special handling for common locations
-            let searchTerm = locationTerm;
-            if (locationTerm.toLowerCase().includes('newcastle')) {
-                searchTerm = 'Newcastle upon Tyne, United Kingdom';
-            } else if (locationTerm.toLowerCase().includes('sugar land')) {
-                searchTerm = 'Sugar Land, Texas, United States';
-            }
+            try {
+                // Get location data from Nominatim
+                const nominatimUrl = `https://nominatim.openstreetmap.org/search?` + 
+                    `format=json&` +
+                    `q=${encodeURIComponent(locationTerm)}&` +
+                    `polygon_geojson=1&` +
+                    `addressdetails=1&` +
+                    `limit=10`;
 
-            const nominatimUrl = `https://nominatim.openstreetmap.org/search?` + 
-                `format=json&` +
-                `q=${encodeURIComponent(searchTerm)}&` +
-                `addressdetails=1&` +
-                `limit=1&` +
-                `polygon_geojson=1&` +  // Request GeoJSON boundary
-                `accept-language=en`;    // Force English results
+                const response = await fetch(nominatimUrl);
+                const data = await response.json();
 
-            const response = await fetch(nominatimUrl);
-            const data = await response.json();
-            return data[0];
-        }
+                if (data.length > 0) {
+                    // First try to find a location with valid polygon data
+                    let location = data.find(loc => {
+                        const hasValidPolygon = loc.geojson?.type === 'Polygon' &&
+                            Array.isArray(loc.geojson?.coordinates) &&
+                            loc.geojson.coordinates.length > 0;
 
-        function getBoundingBoxAndCenter(location) {
-            if (!location) return [null, null];
+                        const isRelevantType = (
+                            loc.class === 'boundary' ||
+                            loc.type === 'suburb' ||
+                            loc.type === 'neighbourhood' ||
+                            loc.type === 'residential' ||
+                            loc.type === 'administrative' ||
+                            loc.class === 'place' ||
+                            loc.osm_type === 'relation'
+                        );
 
-            let boundingBox;
-            const center = {
-                lat: parseFloat(location.lat),
-                lon: parseFloat(location.lon)
-            };
-
-            // Use more precise boundaries for cities and towns
-            if (location.type === 'city' || location.type === 'town' || 
-                location.type === 'administrative' || location.osm_type === 'relation' ||
-                location.class === 'boundary' || location.class === 'place') {
-                
-                const bbox = location.boundingbox.map(parseFloat);
-                boundingBox = [[bbox[0], bbox[2]], [bbox[1], bbox[3]]];
-                
-                // Adjust zoom level based on bounding box size
-                if (map) {
-                    const bounds = L.latLngBounds(boundingBox);
-                    map.fitBounds(bounds, {
-                        padding: [50, 50],
-                        maxZoom: 13
+                        return hasValidPolygon && isRelevantType;
                     });
-                }
-            } else {
-                // For other locations, use a reasonable radius
-                const radius = 0.05; // roughly 5km
-                boundingBox = [
-                    [center.lat - radius, center.lon - radius],
-                    [center.lat + radius, center.lon + radius]
-                ];
-                
-                // Set view for point locations
-                if (map) {
-                    map.setView([center.lat, center.lon], 13);
-                }
-            }
 
-            return [boundingBox, center];
+                    // If no location with polygon found, take the first result
+                    if (!location) {
+                        location = data[0];
+                    }
+
+                    console.log('Selected location:', location);
+
+                    // If we have a valid polygon from Nominatim, use it
+                    if (location.geojson?.type === 'Polygon' &&
+                        Array.isArray(location.geojson?.coordinates) &&
+                        location.geojson.coordinates.length > 0) {
+                        
+                        console.log('Using polygon from Nominatim:', location.geojson);
+                        return location;
+                    }
+
+                    // If no polygon, try to get boundary from Overpass API
+                    if (location.osm_type && location.osm_id) {
+                        try {
+                            // First try to get the relation for the area
+                            let overpassQuery = `[out:json][timeout:25];
+                                area[name="${location.name}"][admin_level][boundary=administrative];
+                                out geom;`;
+
+                            let overpassResponse = await fetch('https://overpass-api.de/api/interpreter', {
+                                method: 'POST',
+                                body: `data=${encodeURIComponent(overpassQuery)}`
+                            });
+
+                            if (overpassResponse.ok) {
+                                const osmData = await overpassResponse.json();
+                                if (osmData.elements && osmData.elements.length > 0) {
+                                    const element = osmData.elements[0];
+                                    if (element.geometry) {
+                                        location.geojson = {
+                                            type: 'Polygon',
+                                            coordinates: [element.geometry.map(point => [point.lon, point.lat])]
+                                        };
+                                        return location;
+                                    }
+                                }
+                            }
+
+                            // If no administrative boundary found, try direct object geometry
+                            overpassQuery = `[out:json][timeout:25];
+                                ${location.osm_type}(${location.osm_id});
+                                out geom;`;
+
+                            overpassResponse = await fetch('https://overpass-api.de/api/interpreter', {
+                                method: 'POST',
+                                body: `data=${encodeURIComponent(overpassQuery)}`
+                            });
+
+                            if (overpassResponse.ok) {
+                                const osmData = await overpassResponse.json();
+                                if (osmData.elements && osmData.elements.length > 0) {
+                                    const element = osmData.elements[0];
+                                    if (element.geometry) {
+                                        location.geojson = {
+                                            type: 'Polygon',
+                                            coordinates: [element.geometry.map(point => [point.lon, point.lat])]
+                                        };
+                                        return location;
+                                    }
+                                }
+                            }
+                        } catch (error) {
+                            console.error('Error fetching from Overpass:', error);
+                        }
+                    }
+
+                    // If we still have a location but no polygon, return it anyway
+                    // The boundary will be handled by the bounding box
+                    return location;
+                }
+
+                console.error('No valid location found');
+                return null;
+            } catch (error) {
+                console.error('Error fetching location:', error);
+                return null;
+            }
         }
 
         function getAmenityFilter(searchTerm) {
@@ -903,35 +1060,15 @@
             return `["amenity"="${cleanTerm}"]|["shop"="${cleanTerm}"]|["tourism"="${cleanTerm}"]|["leisure"="${cleanTerm}"]`;
         }
 
-        async function searchPlaces(searchTerm, center, boundingBox) {
+        async function searchPlaces(searchTerm, center, boundingBox, areaId) {
             let amenityFilter = getAmenityFilter(searchTerm);
             
-            // Calculate search radius based on bounding box size
-            let searchRadius = 2000; // default 2km radius
-            if (boundingBox) {
-                const latDiff = Math.abs(boundingBox[1][0] - boundingBox[0][0]);
-                const lonDiff = Math.abs(boundingBox[1][1] - boundingBox[0][1]);
-                // Convert to approximate meters (rough approximation)
-                const boxSizeMeters = Math.min(latDiff * 111000, lonDiff * 111000 * Math.cos(center.lat * Math.PI / 180));
-                searchRadius = Math.min(Math.max(boxSizeMeters / 2, 500), 5000); // between 500m and 5km
-            }
-            
-            // Add timeout and area size limits for better performance
-            const query = boundingBox ?
-                `[out:json][timeout:30];
+            // Create a search query that works for any area
+            const query = `[out:json][timeout:30];
+                ${areaId ? `area(${areaId})->.searchArea;` : ''}
                 (
-                    node${amenityFilter}(${boundingBox[0][0]},${boundingBox[0][1]},${boundingBox[1][0]},${boundingBox[1][1]});
-                    way${amenityFilter}(${boundingBox[0][0]},${boundingBox[0][1]},${boundingBox[1][0]},${boundingBox[1][1]});
-                    relation${amenityFilter}(${boundingBox[0][0]},${boundingBox[0][1]},${boundingBox[1][0]},${boundingBox[1][1]});
-                );
-                out body center qt;
-                >;
-                out skel qt;` :
-                `[out:json][timeout:30];
-                (
-                    node${amenityFilter}(around:${searchRadius},${center.lat},${center.lon});
-                    way${amenityFilter}(around:${searchRadius},${center.lat},${center.lon});
-                    relation${amenityFilter}(around:${searchRadius},${center.lat},${center.lon});
+                    way${amenityFilter}${areaId ? '(area.searchArea)' : `(${boundingBox[0][1]},${boundingBox[0][0]},${boundingBox[1][1]},${boundingBox[1][0]})`};
+                    node${amenityFilter}${areaId ? '(area.searchArea)' : `(${boundingBox[0][1]},${boundingBox[0][0]},${boundingBox[1][1]},${boundingBox[1][0]})`};
                 );
                 out body center qt;
                 >;
@@ -942,19 +1079,16 @@
                     method: 'POST',
                     body: `data=${encodeURIComponent(query)}`
                 });
+                
+                if (!response.ok) {
+                    throw new Error('Failed to fetch from Overpass API');
+                }
+
                 const data = await response.json();
                 
-                // Filter and sort results by distance from center
+                // Sort results by distance from center
                 return data.elements
-                    .filter(element => {
-                        if (!element.tags) return false;
-                        
-                        const searchTermLower = searchTerm.toLowerCase();
-                        if (searchTermLower.includes('shopping mall') || searchTermLower.includes('mall')) {
-                            return element.tags.shop === 'mall' || element.tags.shop === 'department_store';
-                        }
-                        return true;
-                    })
+                    .filter(element => element.tags)
                     .sort((a, b) => {
                         const aLat = a.type === 'node' ? a.lat : a.center.lat;
                         const aLon = a.type === 'node' ? a.lon : a.center.lon;
@@ -976,42 +1110,6 @@
                 console.error('Overpass API error:', error);
                 throw new Error('Failed to fetch places. Please try again.');
             }
-        }
-
-        function addMarkers(places) {
-            if (!currentBoundary) return;
-            
-            const bounds = currentBoundary.getBounds();
-            
-            places.forEach(place => {
-                if ((place.type === 'node' || (place.type === 'way' && place.center)) && place.tags) {
-                    const position = place.type === 'node' ? 
-                        [place.lat, place.lon] : 
-                        [place.center.lat, place.center.lon];
-
-                    // Only add marker if it's within the boundary
-                    if (bounds.contains(position)) {
-                        let type = 'Place';
-                        if (place.tags.amenity) type = place.tags.amenity.replace(/_/g, ' ');
-                        if (place.tags.tourism) type = place.tags.tourism.replace(/_/g, ' ');
-                        if (place.tags.shop) type = place.tags.shop.replace(/_/g, ' ');
-                        type = type.charAt(0).toUpperCase() + type.slice(1);
-
-                        const marker = L.marker(position)
-                            .bindPopup(`
-                                <strong>${place.tags.name || `Unnamed ${type}`}</strong><br>
-                                <em>${type}</em><br>
-                                ${place.tags.cuisine ? `Cuisine: ${place.tags.cuisine}<br>` : ''}
-                                ${place.tags.opening_hours ? `Hours: ${place.tags.opening_hours}<br>` : ''}
-                                ${place.tags.phone ? `Phone: ${place.tags.phone}<br>` : ''}
-                                ${place.tags.website ? `<a href="${place.tags.website}" target="_blank">Website</a><br>` : ''}
-                                ${place.tags.addr_street ? `Address: ${place.tags.addr_street}${place.tags.addr_housenumber ? ' ' + place.tags.addr_housenumber : ''}<br>` : ''}
-                            `)
-                            .addTo(map);
-                        markers.push(marker);
-                    }
-                }
-            });
         }
 
         function exportResults() {
@@ -1048,48 +1146,34 @@
             // Clear error message at the start of new search
             clearError();
 
-            // If we have a current boundary, search within it
-            if (currentBoundary) {
-                const bounds = currentBoundary.getBounds();
-                const center = bounds.getCenter();
-                
-                try {
+            try {
+                // If we have a current boundary, search within it
+                if (currentBoundary) {
+                    const bounds = new mapboxgl.LngLatBounds(currentBoundary[0], currentBoundary[1]);
+                    const center = bounds.getCenter();
+                    
                     // Adjust category for gas stations
                     const searchTerm = category === 'fuel' ? 'petrol_station' : category;
                     
                     const places = await searchPlaces(searchTerm, 
                         { lat: center.lat, lon: center.lng }, 
-                        [[bounds.getSouth(), bounds.getWest()], 
-                         [bounds.getNorth(), bounds.getEast()]]);
+                        currentBoundary, currentBoundary.areaId);
                     
-                    // Filter places to ensure they're within the boundary
-                    const filteredPlaces = places.filter(place => {
-                        const placeLat = place.type === 'node' ? place.lat : place.center.lat;
-                        const placeLon = place.type === 'node' ? place.lon : place.center.lon;
-                        return bounds.contains([placeLat, placeLon]);
-                    });
-
-                    if (filteredPlaces.length === 0) {
+                    if (places.length === 0) {
                         showError(`No ${category.replace('_', ' ')} found in this area`);
                         return;
                     }
 
-                    // Clear existing markers but keep the boundary
-                    if (markers) {
-                        markers.forEach(marker => marker && map.removeLayer(marker));
-                        markers = [];
-                    }
-
-                    addMarkers(filteredPlaces);
-                    updateResultsList(filteredPlaces);
-                } catch (error) {
-                    console.error('Category search error:', error);
-                    showError('Failed to search for places. Please try again.');
+                    addMarkers(places);
+                    updateResultsList(places);
+                } else {
+                    // If no boundary, perform a new search with the category
+                    input.value = `${category} in ${currentLocation}`;
+                    searchLocation();
                 }
-            } else {
-                // If no boundary, perform a new search with the category
-                input.value = `${category} in ${currentLocation}`;
-                searchLocation();
+            } catch (error) {
+                console.error('Category search error:', error);
+                showError('Failed to search for places. Please try again.');
             }
         }
 
@@ -1098,6 +1182,111 @@
             const errorDiv = document.getElementById('error-message');
             errorDiv.style.display = 'none';
             errorDiv.textContent = '';
+        }
+
+        function clearAllResults() {
+            // Clear results list and hide export button
+            const resultsContainer = document.getElementById('results-container');
+            const exportContainer = document.getElementById('export-container');
+            resultsContainer.innerHTML = '';
+            exportContainer.style.display = 'none';
+
+            // Clear existing markers
+            clearMarkers();
+
+            // Clear boundary
+            if (map.getSource('boundary')) {
+                map.removeLayer('boundary-line');
+                map.removeLayer('boundary-fill');
+                map.removeSource('boundary');
+            }
+
+            // Clear error message
+            const errorDiv = document.getElementById('error-message');
+            errorDiv.style.display = 'none';
+            errorDiv.textContent = '';
+        }
+
+        function addBoundaryToMap(geojsonData, location) {
+            return new Promise((resolve, reject) => {
+                try {
+                    const addBoundaryLayers = () => {
+                        try {
+                            // Remove existing boundary if it exists
+                            if (map.getSource('boundary')) {
+                                if (map.getLayer('boundary-line')) map.removeLayer('boundary-line');
+                                if (map.getLayer('boundary-fill')) map.removeLayer('boundary-fill');
+                                map.removeSource('boundary');
+                            }
+
+                            // Use the GeoJSON exactly as provided by Nominatim
+                            const featureCollection = {
+                                type: 'Feature',
+                                geometry: location.geojson,
+                                properties: {}
+                            };
+
+                            // Add the boundary source
+                            map.addSource('boundary', {
+                                'type': 'geojson',
+                                'data': featureCollection,
+                                'generateId': true
+                            });
+
+                            // Add fill layer
+                            map.addLayer({
+                                'id': 'boundary-fill',
+                                'type': 'fill',
+                                'source': 'boundary',
+                                'paint': {
+                                    'fill-color': '#E14C48',
+                                    'fill-opacity': 0.15
+                                },
+                                'maxzoom': 22
+                            });
+
+                            // Add line layer
+                            map.addLayer({
+                                'id': 'boundary-line',
+                                'type': 'line',
+                                'source': 'boundary',
+                                'paint': {
+                                    'line-color': '#000000',
+                                    'line-width': 3
+                                },
+                                'maxzoom': 22
+                            });
+
+                            // Calculate bounds from the GeoJSON
+                            const bounds = new mapboxgl.LngLatBounds();
+                            location.geojson.coordinates[0].forEach(coord => {
+                                bounds.extend(coord);
+                            });
+
+                            // Fit the map to the bounds
+                            map.fitBounds(bounds, {
+                                padding: 50,
+                                maxZoom: 15,
+                                duration: 2000
+                            });
+
+                            resolve();
+                        } catch (error) {
+                            console.error('Error adding boundary layers:', error);
+                            reject(error);
+                        }
+                    };
+
+                    if (!map.isStyleLoaded()) {
+                        map.once('style.load', addBoundaryLayers);
+                    } else {
+                        addBoundaryLayers();
+                    }
+                } catch (error) {
+                    console.error('Error in addBoundaryToMap:', error);
+                    reject(error);
+                }
+            });
         }
 
         // Initialize the map when the page loads
