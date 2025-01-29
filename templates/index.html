@@ -748,33 +748,80 @@
         function addMarkers(places) {
             clearMarkers();
             
-            places.forEach(place => {
-                if ((place.type === 'node' || (place.type === 'way' && place.center)) && place.tags) {
-                    const position = place.type === 'node' ? 
-                        [place.lon, place.lat] : // Mapbox uses [longitude, latitude]
-                        [place.center.lon, place.center.lat];
-
-                    let type = 'Place';
-                    if (place.tags.amenity) type = place.tags.amenity.replace(/_/g, ' ');
-                    if (place.tags.tourism) type = place.tags.tourism.replace(/_/g, ' ');
-                    if (place.tags.shop) type = place.tags.shop.replace(/_/g, ' ');
-                    type = type.charAt(0).toUpperCase() + type.slice(1);
-
-                    const marker = new mapboxgl.Marker()
-                        .setLngLat(position)
-                        .setPopup(new mapboxgl.Popup().setHTML(`
-                            <strong>${place.tags.name || `Unnamed ${type}`}</strong><br>
-                            <em>${type}</em><br>
-                            ${place.tags.cuisine ? `Cuisine: ${place.tags.cuisine}<br>` : ''}
-                            ${place.tags.opening_hours ? `Hours: ${place.tags.opening_hours}<br>` : ''}
-                            ${place.tags.phone ? `Phone: ${place.tags.phone}<br>` : ''}
-                            ${place.tags.website ? `<a href="${place.tags.website}" target="_blank">Website</a><br>` : ''}
-                            ${place.tags.addr_street ? `Address: ${place.tags.addr_street}${place.tags.addr_housenumber ? ' ' + place.tags.addr_housenumber : ''}<br>` : ''}
-                        `))
-                        .addTo(map);
-                    markers.push(marker);
+            // Get the boundary coordinates from the current boundary source
+            let boundaryCoords;
+            if (map.getSource('boundary')) {
+                const boundaryData = map.getSource('boundary')._data;
+                if (boundaryData.geometry && boundaryData.geometry.coordinates) {
+                    boundaryCoords = boundaryData.geometry.coordinates[0];
                 }
+            }
+
+            // Filter and add markers
+            const validPlaces = places.filter(place => {
+                if (!(place.type === 'node' || (place.type === 'way' && place.center)) || !place.tags) {
+                    return false;
+                }
+
+                const position = place.type === 'node' ? 
+                    [place.lon, place.lat] : // Mapbox uses [longitude, latitude]
+                    [place.center.lon, place.center.lat];
+
+                // Skip if no valid coordinates
+                if (!position || position.some(isNaN)) {
+                    return false;
+                }
+
+                // Check if point is inside boundary
+                if (boundaryCoords) {
+                    let inside = false;
+                    for (let i = 0, j = boundaryCoords.length - 1; i < boundaryCoords.length; j = i++) {
+                        const [xi, yi] = boundaryCoords[i];
+                        const [xj, yj] = boundaryCoords[j];
+                        
+                        const intersect = ((yi > position[1]) !== (yj > position[1])) &&
+                            (position[0] < (xj - xi) * (position[1] - yi) / (yj - yi) + xi);
+                        
+                        if (intersect) inside = !inside;
+                    }
+                    return inside;
+                }
+                return true;
             });
+
+            // First update the results list with only valid places
+            updateResultsList(validPlaces);
+            
+            // Then add markers for valid places
+            validPlaces.forEach(place => {
+                const position = place.type === 'node' ? 
+                    [place.lon, place.lat] : 
+                    [place.center.lon, place.center.lat];
+
+                let type = 'Place';
+                if (place.tags.amenity) type = place.tags.amenity.replace(/_/g, ' ');
+                if (place.tags.tourism) type = place.tags.tourism.replace(/_/g, ' ');
+                if (place.tags.shop) type = place.tags.shop.replace(/_/g, ' ');
+                type = type.charAt(0).toUpperCase() + type.slice(1);
+
+                const marker = new mapboxgl.Marker()
+                    .setLngLat(position)
+                    .setPopup(new mapboxgl.Popup().setHTML(`
+                        <strong>${place.tags.name || `Unnamed ${type}`}</strong><br>
+                        <em>${type}</em><br>
+                        ${place.tags.cuisine ? `Cuisine: ${place.tags.cuisine}<br>` : ''}
+                        ${place.tags.opening_hours ? `Hours: ${place.tags.opening_hours}<br>` : ''}
+                        ${place.tags.phone ? `Phone: ${place.tags.phone}<br>` : ''}
+                        ${place.tags.website ? `<a href="${place.tags.website}" target="_blank">Website</a><br>` : ''}
+                        ${place.tags.addr_street ? `Address: ${place.tags.addr_street}${place.tags.addr_housenumber ? ' ' + place.tags.addr_housenumber : ''}<br>` : ''}
+                    `))
+                    .addTo(map);
+                markers.push(marker);
+            });
+
+            // Show/hide export button based on results
+            const exportContainer = document.getElementById('export-container');
+            exportContainer.style.display = validPlaces.length > 0 ? 'block' : 'none';
         }
 
         function searchLocation(selectedPlace = null) {
@@ -828,32 +875,34 @@
                         }
                     };
 
-                    // Add the boundary to the map
-                    if (!map.isStyleLoaded()) {
-                        map.once('style.load', () => {
-                            addBoundaryToMap(geojsonData, location);
-                        });
-                    } else {
-                        addBoundaryToMap(geojsonData, location);
-                    }
+                    // Add the boundary to the map and then search for places
+                    const addBoundaryAndSearch = async () => {
+                        try {
+                            await addBoundaryToMap(geojsonData, location);
+                            
+                            // Only search for places if a specific type was requested
+                            if (searchTerm) {
+                                const places = await searchPlaces(searchTerm, center, boundingBox, location.areaId);
+                                if (places.length === 0) {
+                                    showError('No places found in this area. Try a different search.');
+                                    return;
+                                }
+                                addMarkers(places);
+                            }
+                        } catch (error) {
+                            console.error('Error in boundary addition or search:', error);
+                            showError('Failed to complete the search. Please try again.');
+                        }
+                    };
 
                     // Hide error message if it was showing
                     const errorDiv = document.getElementById('error-message');
                     errorDiv.style.display = 'none';
 
-                    // Only search for places if a specific type was requested
-                    if (searchTerm) {
-                        searchPlaces(searchTerm, center, boundingBox, location.areaId).then(places => {
-                            if (places.length === 0) {
-                                showError('No places found in this area. Try a different search.');
-                                return;
-                            }
-                            addMarkers(places);
-                            updateResultsList(places);
-                        }).catch(error => {
-                            console.error('Places search error:', error);
-                            showError('Failed to search for places. Please try again.');
-                        });
+                    if (!map.isStyleLoaded()) {
+                        map.once('style.load', addBoundaryAndSearch);
+                    } else {
+                        addBoundaryAndSearch();
                     }
                 }).catch(error => {
                     console.error('Location search error:', error);
@@ -1170,7 +1219,6 @@
                     }
 
                     addMarkers(places);
-                    updateResultsList(places);
                 } else {
                     // If no boundary, perform a new search with the category
                     input.value = `${category} in ${currentLocation}`;

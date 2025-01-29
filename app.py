@@ -12,36 +12,29 @@ load_dotenv()
 
 app = Flask(__name__)
 
-# Get API keys from environment variables
-GOOGLE_MAPS_API_KEY = os.getenv('GOOGLE_MAPS_API_KEY')
+# Get API key from environment variables
 MAPBOX_ACCESS_TOKEN = os.getenv('MAPBOX_ACCESS_TOKEN')
 
-# Verify API keys are loaded
-if not GOOGLE_MAPS_API_KEY:
-    logger.error("Google Maps API key not found in environment variables!")
+# Verify API key is loaded
 if not MAPBOX_ACCESS_TOKEN:
     logger.error("Mapbox access token not found in environment variables!")
 else:
-    logger.info(f"API Keys loaded successfully")
+    logger.info("API Key loaded successfully")
 
 @app.route('/')
 def index():
     # Add API key verification in the route
-    if not GOOGLE_MAPS_API_KEY or not MAPBOX_ACCESS_TOKEN:
-        return "Error: Required API keys not configured!", 500
+    if not MAPBOX_ACCESS_TOKEN:
+        return "Error: Required API key not configured!", 500
     
-    logger.debug(f"Rendering template with API key (masked): {GOOGLE_MAPS_API_KEY[:8]}...{GOOGLE_MAPS_API_KEY[-4:]}")
     return render_template('index.html', 
-                         api_key=GOOGLE_MAPS_API_KEY,
                          mapbox_token=MAPBOX_ACCESS_TOKEN)
 
 @app.route('/debug')
 def debug_info():
     """Route to verify API key and environment setup"""
     return {
-        'api_key_present': bool(GOOGLE_MAPS_API_KEY),
-        'api_key_length': len(GOOGLE_MAPS_API_KEY) if GOOGLE_MAPS_API_KEY else 0,
-        'api_key_masked': f"{GOOGLE_MAPS_API_KEY[:8]}...{GOOGLE_MAPS_API_KEY[-4:]}" if GOOGLE_MAPS_API_KEY else None,
+        'mapbox_token_present': bool(MAPBOX_ACCESS_TOKEN),
         'environment': app.env,
         'debug_mode': app.debug
     }
