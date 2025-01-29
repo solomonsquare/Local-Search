@@ -1249,22 +1249,55 @@
                                 map.removeSource('boundary');
                             }
 
-                            // Create polygon from point if needed
                             let featureCollection;
-                            if (!location.geojson || !location.geojson.coordinates) {
-                                const lat = parseFloat(location.lat);
-                                const lon = parseFloat(location.lon);
-                                featureCollection = {
-                                    type: 'Feature',
-                                    geometry: createPolygonFromPoint(lon, lat, 2), // Using 2km radius for better visibility
-                                    properties: {}
-                                };
-                            } else {
+                            
+                            // First try to use the provided geojson if it's a valid polygon
+                            if (location.geojson?.type === 'Polygon' && 
+                                Array.isArray(location.geojson?.coordinates) && 
+                                location.geojson.coordinates.length > 0) {
                                 featureCollection = {
                                     type: 'Feature',
                                     geometry: location.geojson,
                                     properties: {}
                                 };
+                            }
+                            // If no valid polygon, check if it's a point-based location
+                            else if (location.osm_type === 'node' && location.lat && location.lon) {
+                                const lat = parseFloat(location.lat);
+                                const lon = parseFloat(location.lon);
+                                featureCollection = {
+                                    type: 'Feature',
+                                    geometry: createPolygonFromPoint(lon, lat, 2),
+                                    properties: {}
+                                };
+                            }
+                            // Fallback to bounding box if provided
+                            else if (geojsonData?.geometry) {
+                                featureCollection = geojsonData;
+                            }
+                            // If all else fails, create a small bounding box around the point
+                            else if (location.lat && location.lon) {
+                                const lat = parseFloat(location.lat);
+                                const lon = parseFloat(location.lon);
+                                const radius = 0.02; // roughly 2km
+                                featureCollection = {
+                                    type: 'Feature',
+                                    geometry: {
+                                        type: 'Polygon',
+                                        coordinates: [[
+                                            [lon - radius, lat - radius],
+                                            [lon + radius, lat - radius],
+                                            [lon + radius, lat + radius],
+                                            [lon - radius, lat + radius],
+                                            [lon - radius, lat - radius]
+                                        ]]
+                                    },
+                                    properties: {}
+                                };
+                            }
+
+                            if (!featureCollection) {
+                                throw new Error('Unable to create boundary for this location');
                             }
 
                             // Add the boundary source
@@ -1297,26 +1330,9 @@
 
                             // Calculate bounds
                             const bounds = new mapboxgl.LngLatBounds();
-                            
-                            // Handle both point and polygon cases
-                            if (featureCollection.geometry.type === 'Point') {
-                                // For point locations, extend bounds with the point
-                                bounds.extend([featureCollection.geometry.coordinates[0], featureCollection.geometry.coordinates[1]]);
-                            } else {
-                                // For polygons, extend bounds with all coordinates
-                                featureCollection.geometry.coordinates[0].forEach(coord => {
-                                    bounds.extend(coord);
-                                });
-                            }
-
-                            // If bounds are empty (shouldn't happen but just in case)
-                            if (bounds.isEmpty()) {
-                                // Use the location's lat/lon as fallback
-                                const lat = parseFloat(location.lat);
-                                const lon = parseFloat(location.lon);
-                                bounds.extend([lon - 0.02, lat - 0.02]);
-                                bounds.extend([lon + 0.02, lat + 0.02]);
-                            }
+                            featureCollection.geometry.coordinates[0].forEach(coord => {
+                                bounds.extend(coord);
+                            });
 
                             // Fit the map to the bounds
                             map.fitBounds(bounds, {
