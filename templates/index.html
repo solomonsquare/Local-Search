@@ -36,8 +36,8 @@
         }
 
         #sidebar {
-            width: 380px;
-            min-width: 380px;
+            width: 450px;
+            min-width: 450px;
             height: 100%;
             overflow-y: auto;
             background: var(--background-color);
@@ -266,17 +266,17 @@
             display: grid;
             grid-template-columns: repeat(6, 1fr);
             grid-template-rows: auto auto auto;
-            padding: 12px 16px;
+            padding: 20px;
             border-bottom: 1px solid var(--border-color);
             background: var(--surface-color);
-            gap: 12px;
+            gap: 20px 12px;
         }
 
         .category-icon {
             display: flex;
             flex-direction: column;
             align-items: center;
-            gap: 4px;
+            gap: 6px;
             cursor: pointer;
             transition: var(--transition);
             padding: 4px;
@@ -287,8 +287,8 @@
         }
 
         .icon-circle {
-            width: 40px;
-            height: 40px;
+            width: 42px;
+            height: 42px;
             border-radius: 50%;
             background: var(--background-color);
             display: flex;
@@ -305,16 +305,18 @@
         }
 
         .icon-circle svg {
-            width: 20px;
-            height: 20px;
+            width: 22px;
+            height: 22px;
         }
 
         .category-label {
             font-size: 11px;
+            line-height: 1.2;
             font-weight: 500;
             color: var(--text-secondary);
             text-align: center;
             white-space: nowrap;
+            margin-top: 2px;
         }
 
         .category-icon:hover .category-label {
@@ -322,24 +324,33 @@
         }
 
         /* Responsive adjustments */
+        @media (max-width: 768px) {
+            #sidebar {
+                width: 100%;
+                min-width: 100%;
+            }
+
+            .quick-search {
+                padding: 16px;
+                gap: 16px 10px;
+            }
+        }
+
         @media (max-width: 480px) {
             .quick-search {
                 grid-template-columns: repeat(3, 1fr);
-                padding: 8px;
+                padding: 12px;
+                gap: 12px 8px;
             }
 
             .icon-circle {
-                width: 36px;
-                height: 36px;
+                width: 40px;
+                height: 40px;
             }
 
             .icon-circle svg {
-                width: 18px;
-                height: 18px;
-            }
-
-            .category-label {
-                font-size: 10px;
+                width: 20px;
+                height: 20px;
             }
         }
     </style>
