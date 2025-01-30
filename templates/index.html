@@ -496,24 +496,25 @@
     <div id="container">
         <div id="sidebar">
             <div id="search-container">
-                <input type="text" id="search-input" placeholder="Search for a location...">
+                <input type="text" id="search-input" placeholder="Search for places (e.g., restaurants in Newcastle)">
+                <div id="suggestions" class="suggestions-container" style="display: none;"></div>
                 <div id="error-message"></div>
+            </div>
+            <div class="quick-search">
+                <!-- ... all category icons ... -->
+            </div>
+            <div id="export-container">
+                <button id="export-button" onclick="exportResults()">Export Results</button>
             </div>
             <div id="results-container"></div>
         </div>
         <div id="map"></div>
+        <button id="mobile-toggle" onclick="toggleSidebar()" style="display: none;">
+            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16m-7 6h7"/>
+            </svg>
+        </button>
     </div>
-    <script>
-        // Initialize map with token from backend
-        mapboxgl.accessToken = '{{ mapbox_token }}';
-        
-        let map;
-        let markers = [];
-        let currentBoundary;
-        let searchTimeout;
-
-        // ... rest of the existing code ...
-    </script>
     <script src="{{ url_for('static', filename='js/main.js') }}"></script>
 </body>
 </html> 
