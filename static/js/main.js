@@ -1,10 +1,12 @@
-// Initialize map
-mapboxgl.accessToken = 'pk.dummy'; // This is just for initialization, actual requests go through our backend
+// Initialize map with a public token (this is fine as we're using our proxy endpoints)
+mapboxgl.accessToken = 'pk.eyJ1Ijoic29sbzEwMSIsImEiOiJjbTZmZDFsd20wM3p4Mm1zYzQzYXFzdHVqIn0.IQ71MXLuETfWopkEKCvjwA';
+
+// Initialize the map
 const map = new mapboxgl.Map({
     container: 'map',
-    style: 'mapbox://styles/mapbox/streets-v11',
-    center: [-74.5, 40],
-    zoom: 9
+    style: 'mapbox://styles/mapbox/streets-v12',
+    center: [-0.127758, 51.507351], // London
+    zoom: 10
 });
 
 // Add navigation controls
@@ -71,6 +73,11 @@ searchInput.addEventListener('input', (e) => {
 // Display search results
 function displayResults(results) {
     resultsContainer.innerHTML = '';
+    
+    if (!results || results.length === 0) {
+        resultsContainer.innerHTML = '<div class="no-results">No results found</div>';
+        return;
+    }
     
     results.forEach(result => {
         const div = document.createElement('div');

@@ -18,15 +18,17 @@ load_dotenv()
 
 app = Flask(__name__)
 
-# Security headers
+# Security headers with updated CSP
 Talisman(app, 
          content_security_policy={
-             'default-src': "'self'",
+             'default-src': ["'self'", "api.mapbox.com", "events.mapbox.com"],
              'script-src': ["'self'", "'unsafe-inline'", "api.mapbox.com"],
              'style-src': ["'self'", "'unsafe-inline'", "api.mapbox.com", "fonts.googleapis.com"],
-             'img-src': ["'self'", "api.mapbox.com", "data:"],
+             'img-src': ["'self'", "api.mapbox.com", "*.mapbox.com", "data:", "blob:"],
              'font-src': ["'self'", "fonts.gstatic.com"],
-             'connect-src': ["'self'", "api.mapbox.com"]
+             'worker-src': ["'self'", "blob:"],
+             'connect-src': ["'self'", "api.mapbox.com", "events.mapbox.com", "*.tiles.mapbox.com"],
+             'frame-src': ["'self'"]
          },
          force_https=True)
 
