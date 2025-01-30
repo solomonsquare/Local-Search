@@ -503,6 +503,17 @@
         </div>
         <div id="map"></div>
     </div>
+    <script>
+        // Initialize map with token from backend
+        mapboxgl.accessToken = '{{ mapbox_token }}';
+        
+        let map;
+        let markers = [];
+        let currentBoundary;
+        let searchTimeout;
+
+        // ... rest of the existing code ...
+    </script>
     <script src="{{ url_for('static', filename='js/main.js') }}"></script>
 </body>
 </html> 
