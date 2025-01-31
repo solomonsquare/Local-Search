@@ -1,5 +1,5 @@
 // Initialize map
-mapboxgl.accessToken = 'pk.dummy'; // This is just for initialization, actual requests go through our backend
+mapboxgl.accessToken = window.MAPBOX_TOKEN;
 const map = new mapboxgl.Map({
     container: 'map',
     style: 'mapbox://styles/mapbox/streets-v11',
