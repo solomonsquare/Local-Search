@@ -64,24 +64,48 @@ def geocode():
         return jsonify({'error': 'No search text provided'}), 400
 
     try:
-        # First try Mapbox
+        # Parse query to check if it's a category search
+        parts = search_text.lower().split(' in ')
+        category = parts[0] if len(parts) > 1 else None
+        location = parts[1] if len(parts) > 1 else search_text
+
+        # First get the area boundary if it's a category search
+        area_response = None
+        if category:
+            area_response = requests.get(
+                'https://api.mapbox.com/geocoding/v5/mapbox.places/{}.json'.format(location),
+                params={
+                    'access_token': MAPBOX_ACCESS_TOKEN,
+                    'limit': 1,
+                    'types': 'place,locality,neighborhood,address'
+                }
+            )
+            area_data = area_response.json()
+
+        # Then search for places
+        search_area = location if category else search_text
         mapbox_response = requests.get(
-            'https://api.mapbox.com/geocoding/v5/mapbox.places/{}.json'.format(search_text),
+            'https://api.mapbox.com/geocoding/v5/mapbox.places/{}.json'.format(
+                category if category else search_text
+            ),
             params={
                 'access_token': MAPBOX_ACCESS_TOKEN,
-                'limit': 5
+                'limit': 10,
+                'proximity': ','.join(map(str, area_data['features'][0]['center'])) if category and area_response and area_response.ok and area_data.get('features') else None,
+                'bbox': ','.join(map(str, area_data['features'][0]['bbox'])) if category and area_response and area_response.ok and area_data.get('features') and 'bbox' in area_data['features'][0] else None
             }
         )
         mapbox_data = mapbox_response.json()
 
-        # Then try OpenStreetMap
+        # Get OSM data for additional context
         osm_response = requests.get(
             'https://nominatim.openstreetmap.org/search',
             params={
-                'q': search_text,
+                'q': search_area,
                 'format': 'json',
                 'limit': 5,
-                'addressdetails': 1
+                'addressdetails': 1,
+                'polygon_geojson': 1
             },
             headers={'User-Agent': 'LocalSearch/1.0'}
         )
@@ -90,25 +114,33 @@ def geocode():
         # Combine and format results
         combined_features = []
         
+        # If it's a category search and we have area data, add it first
+        if category and area_response and area_response.ok and area_data.get('features'):
+            area_feature = area_data['features'][0]
+            # Add OSM polygon if available
+            if osm_data and len(osm_data) > 0 and 'geojson' in osm_data[0]:
+                area_feature['geometry'] = osm_data[0]['geojson']
+            combined_features.append(area_feature)
+
         # Add Mapbox results
         if mapbox_response.ok:
-            combined_features.extend(mapbox_data.get('features', []))
-            
-        # Add OSM results
-        if osm_response.ok:
-            for osm_result in osm_data:
-                feature = {
-                    'id': f"osm-{osm_result['place_id']}",
-                    'type': 'Feature',
-                    'place_type': [osm_result.get('type', 'place')],
-                    'text': osm_result.get('display_name', '').split(',')[0],
-                    'place_name': osm_result.get('display_name', ''),
-                    'center': [float(osm_result['lon']), float(osm_result['lat'])],
-                    'properties': osm_result.get('address', {})
-                }
-                combined_features.append(feature)
+            # Filter results if we have a bounding box
+            if category and area_response and area_response.ok and area_data.get('features'):
+                area_feature = area_data['features'][0]
+                if 'bbox' in area_feature:
+                    bbox = area_feature['bbox']
+                    filtered_features = [
+                        f for f in mapbox_data.get('features', [])
+                        if bbox[0] <= f['center'][0] <= bbox[2] and
+                           bbox[1] <= f['center'][1] <= bbox[3]
+                    ]
+                    combined_features.extend(filtered_features)
+                else:
+                    combined_features.extend(mapbox_data.get('features', []))
+            else:
+                combined_features.extend(mapbox_data.get('features', []))
 
-        return jsonify({'type': 'FeatureCollection', 'features': combined_features[:5]})
+        return jsonify({'type': 'FeatureCollection', 'features': combined_features[:10]})
     except requests.exceptions.RequestException as e:
         logger.error(f"Geocoding error: {str(e)}")
         return jsonify({'error': 'Failed to fetch location data'}), 500

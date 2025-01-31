@@ -5,6 +5,7 @@ mapboxgl.accessToken = window.MAPBOX_TOKEN;
 let selectedLocations = [];
 let boundaryLayer = null;
 let markers = [];
+let currentArea = null;
 
 // Initialize the map
 const map = new mapboxgl.Map({
@@ -112,11 +113,86 @@ async function searchCategory(category) {
     const query = `${category} in ${searchInput.value || 'current area'}`;
     searchInput.value = query;
     const results = await searchLocation(query);
-    showSuggestions(results);
+    
+    // Clear previous markers and boundary
+    clearMap();
+    
+    // Process results
+    if (results && results.length > 0) {
+        // First result should be the area if it's a category search
+        const areaResult = results[0];
+        if (areaResult.geometry) {
+            // Draw area boundary
+            drawAreaBoundary(areaResult.geometry);
+            currentArea = areaResult;
+            
+            // Add markers for places within the area
+            results.slice(1).forEach(result => addLocation(result, false));
+            
+            // Fit map to area boundary
+            if (areaResult.bbox) {
+                map.fitBounds([
+                    [areaResult.bbox[0], areaResult.bbox[1]],
+                    [areaResult.bbox[2], areaResult.bbox[3]]
+                ], { padding: 50 });
+            }
+        }
+    }
+    
+    showSuggestions(results.slice(1)); // Don't show area in suggestions
+}
+
+// Clear map
+function clearMap() {
+    // Clear markers
+    markers.forEach(marker => marker.remove());
+    markers = [];
+    
+    // Clear boundary
+    if (boundaryLayer) {
+        map.removeLayer('boundary');
+        map.removeSource('boundary');
+        boundaryLayer = null;
+    }
+    
+    // Clear area boundary
+    if (map.getLayer('area-boundary')) {
+        map.removeLayer('area-boundary');
+        map.removeSource('area-boundary');
+    }
+    
+    // Clear selected locations
+    selectedLocations = [];
+    resultsContainer.innerHTML = '';
+    exportContainer.style.display = 'none';
+}
+
+// Draw area boundary
+function drawAreaBoundary(geometry) {
+    if (map.getLayer('area-boundary')) {
+        map.removeLayer('area-boundary');
+        map.removeSource('area-boundary');
+    }
+    
+    map.addSource('area-boundary', {
+        type: 'geojson',
+        data: geometry
+    });
+    
+    map.addLayer({
+        id: 'area-boundary',
+        type: 'line',
+        source: 'area-boundary',
+        layout: {},
+        paint: {
+            'line-color': '#2563eb',
+            'line-width': 2
+        }
+    });
 }
 
 // Add location to the list and map
-function addLocation(location) {
+function addLocation(location, shouldFly = true) {
     if (!selectedLocations.some(loc => loc.id === location.id)) {
         selectedLocations.push(location);
         
@@ -133,8 +209,10 @@ function addLocation(location) {
             .addTo(map);
         markers.push(marker);
         
-        // Update boundary
-        updateBoundary();
+        // Update boundary if not showing area boundary
+        if (!currentArea) {
+            updateBoundary();
+        }
         
         // Show export button if we have locations
         if (selectedLocations.length > 0) {
@@ -152,11 +230,13 @@ function addLocation(location) {
         resultsContainer.appendChild(div);
     }
     
-    // Fly to the location
-    map.flyTo({
-        center: location.center,
-        zoom: 14
-    });
+    // Fly to the location if requested
+    if (shouldFly) {
+        map.flyTo({
+            center: location.center,
+            zoom: 14
+        });
+    }
 }
 
 // Update boundary box
