@@ -21,12 +21,12 @@ app = Flask(__name__)
 # Security headers
 Talisman(app, 
          content_security_policy={
-             'default-src': "'self'",
-             'script-src': ["'self'", "'unsafe-inline'", "api.mapbox.com"],
-             'style-src': ["'self'", "'unsafe-inline'", "api.mapbox.com", "fonts.googleapis.com"],
-             'img-src': ["'self'", "api.mapbox.com", "data:"],
-             'font-src': ["'self'", "fonts.gstatic.com"],
-             'connect-src': ["'self'", "api.mapbox.com"]
+             'default-src': ["'self'", "https://*"],
+             'script-src': ["'self'", "'unsafe-inline'", "'unsafe-eval'", "api.mapbox.com", "https://*"],
+             'style-src': ["'self'", "'unsafe-inline'", "api.mapbox.com", "fonts.googleapis.com", "https://*"],
+             'img-src': ["'self'", "api.mapbox.com", "data:", "blob:", "https://*"],
+             'font-src': ["'self'", "fonts.gstatic.com", "https://*"],
+             'connect-src': ["'self'", "api.mapbox.com", "events.mapbox.com", "https://*"]
          },
          force_https=True)
 
