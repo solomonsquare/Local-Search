@@ -15,29 +15,6 @@ let selectedLocations = [];
 let boundaryLayer = null;
 let markers = [];
 
-// Mobile sidebar toggle
-let sidebarVisible = true;
-const toggleSidebar = () => {
-    const sidebar = document.getElementById('sidebar');
-    sidebarVisible = !sidebarVisible;
-    if (!sidebarVisible) {
-        sidebar.classList.add('sidebar-hidden');
-    } else {
-        sidebar.classList.remove('sidebar-hidden');
-    }
-};
-
-// Add mobile toggle button if not exists
-if (!document.getElementById('mobile-toggle')) {
-    const toggleButton = document.createElement('button');
-    toggleButton.id = 'mobile-toggle';
-    toggleButton.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16m-7 6h7" />
-    </svg>`;
-    toggleButton.addEventListener('click', toggleSidebar);
-    document.body.appendChild(toggleButton);
-}
-
 // Search functionality
 async function searchLocation(query) {
     try {
@@ -80,6 +57,7 @@ async function getDirections(coordinates) {
 const searchInput = document.getElementById('search-input');
 const resultsContainer = document.getElementById('results-container');
 const exportContainer = document.getElementById('export-container');
+const suggestionsContainer = document.getElementById('suggestions');
 
 let searchTimeout;
 searchInput.addEventListener('input', (e) => {
@@ -88,6 +66,7 @@ searchInput.addEventListener('input', (e) => {
     
     if (query.length < 3) {
         resultsContainer.innerHTML = '';
+        suggestionsContainer.style.display = 'none';
         return;
     }
     
@@ -97,9 +76,23 @@ searchInput.addEventListener('input', (e) => {
     }, 300);
 });
 
+// Category search function
+async function searchCategory(category) {
+    const query = `${category} in ${searchInput.value || 'current area'}`;
+    searchInput.value = query;
+    const results = await searchLocation(query);
+    displayResults(results);
+}
+
 // Display search results
 function displayResults(results) {
     resultsContainer.innerHTML = '';
+    suggestionsContainer.style.display = 'none';
+    
+    if (!results || results.length === 0) {
+        resultsContainer.innerHTML = '<div class="no-results">No results found</div>';
+        return;
+    }
     
     results.forEach(result => {
         const div = document.createElement('div');
@@ -127,9 +120,16 @@ function addLocation(location) {
     if (!selectedLocations.some(loc => loc.id === location.id)) {
         selectedLocations.push(location);
         
-        // Add marker
+        // Add marker with popup
+        const popup = new mapboxgl.Popup({ offset: 25 })
+            .setHTML(`
+                <strong>${location.text}</strong><br>
+                ${location.place_name}
+            `);
+            
         const marker = new mapboxgl.Marker()
             .setLngLat(location.center)
+            .setPopup(popup)
             .addTo(map);
         markers.push(marker);
         
@@ -206,7 +206,7 @@ function updateBoundary() {
 }
 
 // Export functionality
-document.getElementById('export-button').addEventListener('click', () => {
+function exportResults() {
     const locations = selectedLocations.map(loc => ({
         name: loc.text,
         type: loc.place_type[0],
@@ -223,4 +223,36 @@ document.getElementById('export-button').addEventListener('click', () => {
     a.click();
     document.body.removeChild(a);
     URL.revokeObjectURL(url);
-}); 
+}
+
+// Mobile sidebar toggle
+let sidebarVisible = true;
+function toggleSidebar() {
+    const sidebar = document.getElementById('sidebar');
+    const mobileToggle = document.getElementById('mobile-toggle');
+    sidebarVisible = !sidebarVisible;
+    
+    if (!sidebarVisible) {
+        sidebar.classList.add('sidebar-hidden');
+        mobileToggle.classList.add('expanded');
+    } else {
+        sidebar.classList.remove('sidebar-hidden');
+        mobileToggle.classList.remove('expanded');
+    }
+}
+
+// Show mobile toggle button on small screens
+function updateMobileToggleVisibility() {
+    const mobileToggle = document.getElementById('mobile-toggle');
+    if (window.innerWidth <= 768) {
+        mobileToggle.style.display = 'flex';
+    } else {
+        mobileToggle.style.display = 'none';
+        // Always show sidebar on desktop
+        document.getElementById('sidebar').classList.remove('sidebar-hidden');
+    }
+}
+
+// Initialize mobile toggle
+window.addEventListener('resize', updateMobileToggleVisibility);
+updateMobileToggleVisibility();
