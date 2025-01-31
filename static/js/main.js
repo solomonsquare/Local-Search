@@ -1,5 +1,5 @@
-// Initialize map
-mapboxgl.accessToken = 'pk.dummy'; // This is just for initialization, actual requests go through our backend
+// Initialize map with token from Flask
+mapboxgl.accessToken = window.MAPBOX_TOKEN;
 
 // Store selected locations and map state
 let selectedLocations = [];
@@ -9,9 +9,9 @@ let markers = [];
 // Initialize the map
 const map = new mapboxgl.Map({
     container: 'map',
-    style: 'mapbox://styles/mapbox/streets-v11',
-    center: [-74.5, 40],
-    zoom: 9
+    style: 'mapbox://styles/mapbox/streets-v12',
+    center: [-0.127758, 51.507351], // London
+    zoom: 10
 });
 
 // Add navigation controls

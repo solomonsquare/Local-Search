@@ -18,15 +18,17 @@ load_dotenv()
 
 app = Flask(__name__)
 
-# Security headers
+# Security headers with updated CSP
 Talisman(app, 
          content_security_policy={
-             'default-src': "'self'",
+             'default-src': ["'self'", "api.mapbox.com", "events.mapbox.com"],
              'script-src': ["'self'", "'unsafe-inline'", "api.mapbox.com", "nominatim.openstreetmap.org"],
              'style-src': ["'self'", "'unsafe-inline'", "api.mapbox.com", "fonts.googleapis.com"],
-             'img-src': ["'self'", "api.mapbox.com", "*.openstreetmap.org", "data:"],
+             'img-src': ["'self'", "api.mapbox.com", "*.mapbox.com", "*.openstreetmap.org", "data:", "blob:"],
              'font-src': ["'self'", "fonts.gstatic.com"],
-             'connect-src': ["'self'", "api.mapbox.com", "nominatim.openstreetmap.org"]
+             'worker-src': ["'self'", "blob:"],
+             'connect-src': ["'self'", "api.mapbox.com", "events.mapbox.com", "*.tiles.mapbox.com", "nominatim.openstreetmap.org"],
+             'frame-src': ["'self'"]
          },
          force_https=True)
 
@@ -51,7 +53,8 @@ if not MAPBOX_ACCESS_TOKEN:
 
 @app.route('/')
 def index():
-    return render_template('index.html')
+    """Render the main application page"""
+    return render_template('index.html', mapbox_token=MAPBOX_ACCESS_TOKEN)
 
 @app.route('/api/geocode')
 def geocode():
