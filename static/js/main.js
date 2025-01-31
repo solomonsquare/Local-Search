@@ -59,6 +59,7 @@ async function getDirections(coordinates) {
 const searchInput = document.getElementById('search-input');
 const resultsContainer = document.getElementById('results-container');
 const exportContainer = document.getElementById('export-container');
+const suggestionsContainer = document.getElementById('suggestions');
 
 let searchTimeout;
 searchInput.addEventListener('input', (e) => {
@@ -67,47 +68,51 @@ searchInput.addEventListener('input', (e) => {
     
     if (query.length < 3) {
         resultsContainer.innerHTML = '';
+        suggestionsContainer.style.display = 'none';
         return;
     }
     
     searchTimeout = setTimeout(async () => {
         const results = await searchLocation(query);
-        displayResults(results);
+        showSuggestions(results);
     }, 300);
 });
+
+// Show search suggestions
+function showSuggestions(results) {
+    suggestionsContainer.innerHTML = '';
+    
+    if (!results || results.length === 0) {
+        suggestionsContainer.style.display = 'none';
+        return;
+    }
+    
+    results.forEach(result => {
+        const div = document.createElement('div');
+        div.className = 'suggestion-item';
+        div.innerHTML = `
+            <div class="suggestion-main">${result.text}</div>
+            <div class="suggestion-secondary">${result.place_name}</div>
+        `;
+        
+        div.addEventListener('click', () => {
+            searchInput.value = result.place_name;
+            suggestionsContainer.style.display = 'none';
+            addLocation(result);
+        });
+        
+        suggestionsContainer.appendChild(div);
+    });
+    
+    suggestionsContainer.style.display = 'block';
+}
 
 // Category search function
 async function searchCategory(category) {
     const query = `${category} in ${searchInput.value || 'current area'}`;
     searchInput.value = query;
     const results = await searchLocation(query);
-    displayResults(results);
-}
-
-// Display search results
-function displayResults(results) {
-    resultsContainer.innerHTML = '';
-    
-    if (!results || results.length === 0) {
-        resultsContainer.innerHTML = '<div class="no-results">No results found</div>';
-        return;
-    }
-    
-    results.forEach(result => {
-        const div = document.createElement('div');
-        div.className = 'place-item';
-        div.innerHTML = `
-            <div class="place-name">${result.text}</div>
-            <div class="place-type">${result.place_type.join(', ')}</div>
-            <div class="place-details">${result.place_name}</div>
-        `;
-        
-        div.addEventListener('click', () => {
-            addLocation(result);
-        });
-        
-        resultsContainer.appendChild(div);
-    });
+    showSuggestions(results);
 }
 
 // Add location to the list and map
@@ -135,6 +140,16 @@ function addLocation(location) {
         if (selectedLocations.length > 0) {
             exportContainer.style.display = 'block';
         }
+
+        // Add to results list
+        const div = document.createElement('div');
+        div.className = 'place-item';
+        div.innerHTML = `
+            <div class="place-name">${location.text}</div>
+            <div class="place-type">${location.place_type.join(', ')}</div>
+            <div class="place-details">${location.place_name}</div>
+        `;
+        resultsContainer.appendChild(div);
     }
     
     // Fly to the location
