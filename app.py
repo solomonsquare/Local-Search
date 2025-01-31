@@ -51,7 +51,7 @@ if not MAPBOX_ACCESS_TOKEN:
 
 @app.route('/')
 def index():
-    return render_template('index.html')
+    return render_template('index.html', mapbox_token=MAPBOX_ACCESS_TOKEN)
 
 @app.route('/api/geocode')
 def geocode():
@@ -91,6 +91,10 @@ def directions():
 def favicon():
     return send_from_directory(os.path.join(app.root_path, 'static'),
                              'favicon.ico', mimetype='image/vnd.microsoft.icon')
+
+@app.route('/static/<path:path>')
+def serve_static(path):
+    return send_from_directory('static', path)
 
 @app.errorhandler(404)
 def page_not_found(e):
