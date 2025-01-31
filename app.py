@@ -18,17 +18,15 @@ load_dotenv()
 
 app = Flask(__name__)
 
-# Security headers with updated CSP
+# Security headers
 Talisman(app, 
          content_security_policy={
-             'default-src': ["'self'", "api.mapbox.com", "events.mapbox.com"],
-             'script-src': ["'self'", "'unsafe-inline'", "api.mapbox.com"],
+             'default-src': "'self'",
+             'script-src': ["'self'", "'unsafe-inline'", "api.mapbox.com", "nominatim.openstreetmap.org"],
              'style-src': ["'self'", "'unsafe-inline'", "api.mapbox.com", "fonts.googleapis.com"],
-             'img-src': ["'self'", "api.mapbox.com", "*.mapbox.com", "data:", "blob:"],
+             'img-src': ["'self'", "api.mapbox.com", "*.openstreetmap.org", "data:"],
              'font-src': ["'self'", "fonts.gstatic.com"],
-             'worker-src': ["'self'", "blob:"],
-             'connect-src': ["'self'", "api.mapbox.com", "events.mapbox.com", "*.tiles.mapbox.com"],
-             'frame-src': ["'self'"]
+             'connect-src': ["'self'", "api.mapbox.com", "nominatim.openstreetmap.org"]
          },
          force_https=True)
 
@@ -53,28 +51,61 @@ if not MAPBOX_ACCESS_TOKEN:
 
 @app.route('/')
 def index():
-    """Render the main application page"""
-    return render_template('index.html', mapbox_token=MAPBOX_ACCESS_TOKEN)
+    return render_template('index.html')
 
 @app.route('/api/geocode')
 def geocode():
-    """Proxy endpoint for Mapbox geocoding"""
+    """Combined endpoint for Mapbox and OpenStreetMap geocoding"""
     search_text = request.args.get('q')
     if not search_text:
         return jsonify({'error': 'No search text provided'}), 400
 
     try:
-        # Forward the request to Mapbox
-        response = requests.get(
+        # First try Mapbox
+        mapbox_response = requests.get(
             'https://api.mapbox.com/geocoding/v5/mapbox.places/{}.json'.format(search_text),
             params={
                 'access_token': MAPBOX_ACCESS_TOKEN,
-                'limit': 5,
-                'types': 'place,poi,address'
+                'limit': 5
             }
         )
-        response.raise_for_status()
-        return jsonify(response.json())
+        mapbox_data = mapbox_response.json()
+
+        # Then try OpenStreetMap
+        osm_response = requests.get(
+            'https://nominatim.openstreetmap.org/search',
+            params={
+                'q': search_text,
+                'format': 'json',
+                'limit': 5,
+                'addressdetails': 1
+            },
+            headers={'User-Agent': 'LocalSearch/1.0'}
+        )
+        osm_data = osm_response.json()
+
+        # Combine and format results
+        combined_features = []
+        
+        # Add Mapbox results
+        if mapbox_response.ok:
+            combined_features.extend(mapbox_data.get('features', []))
+            
+        # Add OSM results
+        if osm_response.ok:
+            for osm_result in osm_data:
+                feature = {
+                    'id': f"osm-{osm_result['place_id']}",
+                    'type': 'Feature',
+                    'place_type': [osm_result.get('type', 'place')],
+                    'text': osm_result.get('display_name', '').split(',')[0],
+                    'place_name': osm_result.get('display_name', ''),
+                    'center': [float(osm_result['lon']), float(osm_result['lat'])],
+                    'properties': osm_result.get('address', {})
+                }
+                combined_features.append(feature)
+
+        return jsonify({'type': 'FeatureCollection', 'features': combined_features[:5]})
     except requests.exceptions.RequestException as e:
         logger.error(f"Geocoding error: {str(e)}")
         return jsonify({'error': 'Failed to fetch location data'}), 500
@@ -101,13 +132,6 @@ def directions():
     except requests.exceptions.RequestException as e:
         logger.error(f"Directions error: {str(e)}")
         return jsonify({'error': 'Failed to fetch directions data'}), 500
-
-@app.route('/api/token')
-def get_token():
-    """Endpoint to get the Mapbox token (for development only)"""
-    if app.debug:
-        return jsonify({'token': MAPBOX_ACCESS_TOKEN})
-    return jsonify({'error': 'Not available in production'}), 403
 
 @app.route('/favicon.ico')
 def favicon():
