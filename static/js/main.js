@@ -1,19 +1,21 @@
-// Initialize map
-mapboxgl.accessToken = 'pk.dummy'; // This is just for initialization, actual requests go through our backend
+// Initialize map with token from Flask
+mapboxgl.accessToken = window.MAPBOX_TOKEN;
+
+// Store selected locations and map state
+let selectedLocations = [];
+let boundaryLayer = null;
+let markers = [];
+
+// Initialize the map
 const map = new mapboxgl.Map({
     container: 'map',
-    style: 'mapbox://styles/mapbox/streets-v11',
-    center: [-74.5, 40],
-    zoom: 9
+    style: 'mapbox://styles/mapbox/streets-v12',
+    center: [-0.127758, 51.507351], // London
+    zoom: 10
 });
 
 // Add navigation controls
 map.addControl(new mapboxgl.NavigationControl());
-
-// Store selected locations
-let selectedLocations = [];
-let boundaryLayer = null;
-let markers = [];
 
 // Search functionality
 async function searchLocation(query) {
@@ -57,7 +59,6 @@ async function getDirections(coordinates) {
 const searchInput = document.getElementById('search-input');
 const resultsContainer = document.getElementById('results-container');
 const exportContainer = document.getElementById('export-container');
-const suggestionsContainer = document.getElementById('suggestions');
 
 let searchTimeout;
 searchInput.addEventListener('input', (e) => {
@@ -66,7 +67,6 @@ searchInput.addEventListener('input', (e) => {
     
     if (query.length < 3) {
         resultsContainer.innerHTML = '';
-        suggestionsContainer.style.display = 'none';
         return;
     }
     
@@ -87,7 +87,6 @@ async function searchCategory(category) {
 // Display search results
 function displayResults(results) {
     resultsContainer.innerHTML = '';
-    suggestionsContainer.style.display = 'none';
     
     if (!results || results.length === 0) {
         resultsContainer.innerHTML = '<div class="no-results">No results found</div>';
@@ -105,10 +104,6 @@ function displayResults(results) {
         
         div.addEventListener('click', () => {
             addLocation(result);
-            // On mobile, hide sidebar after selection
-            if (window.innerWidth <= 768) {
-                toggleSidebar();
-            }
         });
         
         resultsContainer.appendChild(div);
@@ -206,7 +201,7 @@ function updateBoundary() {
 }
 
 // Export functionality
-function exportResults() {
+document.getElementById('export-button').addEventListener('click', () => {
     const locations = selectedLocations.map(loc => ({
         name: loc.text,
         type: loc.place_type[0],
@@ -223,36 +218,4 @@ function exportResults() {
     a.click();
     document.body.removeChild(a);
     URL.revokeObjectURL(url);
-}
-
-// Mobile sidebar toggle
-let sidebarVisible = true;
-function toggleSidebar() {
-    const sidebar = document.getElementById('sidebar');
-    const mobileToggle = document.getElementById('mobile-toggle');
-    sidebarVisible = !sidebarVisible;
-    
-    if (!sidebarVisible) {
-        sidebar.classList.add('sidebar-hidden');
-        mobileToggle.classList.add('expanded');
-    } else {
-        sidebar.classList.remove('sidebar-hidden');
-        mobileToggle.classList.remove('expanded');
-    }
-}
-
-// Show mobile toggle button on small screens
-function updateMobileToggleVisibility() {
-    const mobileToggle = document.getElementById('mobile-toggle');
-    if (window.innerWidth <= 768) {
-        mobileToggle.style.display = 'flex';
-    } else {
-        mobileToggle.style.display = 'none';
-        // Always show sidebar on desktop
-        document.getElementById('sidebar').classList.remove('sidebar-hidden');
-    }
-}
-
-// Initialize mobile toggle
-window.addEventListener('resize', updateMobileToggleVisibility);
-updateMobileToggleVisibility();
+}); 

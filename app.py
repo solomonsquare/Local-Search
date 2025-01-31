@@ -53,7 +53,8 @@ if not MAPBOX_ACCESS_TOKEN:
 
 @app.route('/')
 def index():
-    return render_template('index.html')
+    """Render the main application page"""
+    return render_template('index.html', mapbox_token=MAPBOX_ACCESS_TOKEN)
 
 @app.route('/api/geocode')
 def geocode():
@@ -62,15 +63,21 @@ def geocode():
     if not search_text:
         return jsonify({'error': 'No search text provided'}), 400
 
-    # Forward the request to Mapbox
-    response = requests.get(
-        'https://api.mapbox.com/geocoding/v5/mapbox.places/{}.json'.format(search_text),
-        params={
-            'access_token': MAPBOX_ACCESS_TOKEN,
-            'limit': 5
-        }
-    )
-    return jsonify(response.json())
+    try:
+        # Forward the request to Mapbox
+        response = requests.get(
+            'https://api.mapbox.com/geocoding/v5/mapbox.places/{}.json'.format(search_text),
+            params={
+                'access_token': MAPBOX_ACCESS_TOKEN,
+                'limit': 5,
+                'types': 'place,poi,address'
+            }
+        )
+        response.raise_for_status()
+        return jsonify(response.json())
+    except requests.exceptions.RequestException as e:
+        logger.error(f"Geocoding error: {str(e)}")
+        return jsonify({'error': 'Failed to fetch location data'}), 500
 
 @app.route('/api/directions')
 def directions():
@@ -79,15 +86,28 @@ def directions():
     if not coordinates:
         return jsonify({'error': 'No coordinates provided'}), 400
 
-    # Forward the request to Mapbox
-    response = requests.get(
-        'https://api.mapbox.com/directions/v5/mapbox/driving/{}'.format(coordinates),
-        params={
-            'access_token': MAPBOX_ACCESS_TOKEN,
-            'geometries': 'geojson'
-        }
-    )
-    return jsonify(response.json())
+    try:
+        # Forward the request to Mapbox
+        response = requests.get(
+            'https://api.mapbox.com/directions/v5/mapbox/driving/{}'.format(coordinates),
+            params={
+                'access_token': MAPBOX_ACCESS_TOKEN,
+                'geometries': 'geojson',
+                'overview': 'full'
+            }
+        )
+        response.raise_for_status()
+        return jsonify(response.json())
+    except requests.exceptions.RequestException as e:
+        logger.error(f"Directions error: {str(e)}")
+        return jsonify({'error': 'Failed to fetch directions data'}), 500
+
+@app.route('/api/token')
+def get_token():
+    """Endpoint to get the Mapbox token (for development only)"""
+    if app.debug:
+        return jsonify({'token': MAPBOX_ACCESS_TOKEN})
+    return jsonify({'error': 'Not available in production'}), 403
 
 @app.route('/favicon.ico')
 def favicon():

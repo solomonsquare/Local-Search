@@ -610,7 +610,7 @@
                 </div>
             </div>
             <div id="export-container">
-                <button id="export-button" onclick="exportResults()">Export Results</button>
+                <button id="export-button">Export Selected Locations</button>
             </div>
             <div id="results-container"></div>
         </div>
@@ -621,6 +621,9 @@
             </svg>
         </button>
     </div>
+    <script>
+        window.MAPBOX_TOKEN = '{{ mapbox_token }}';
+    </script>
     <script src="{{ url_for('static', filename='js/main.js') }}"></script>
 </body>
 </html> 
